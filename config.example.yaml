@@ -1,0 +1,84 @@
+# libvirt-mcp-server 配置文件示例
+# 复制此文件为 config.yaml 并根据您的环境进行配置
+
+# Libvirt 连接配置
+libvirt:
+  # Libvirt 连接 URI
+  # 本地系统: qemu:///system (需要 root 权限) 或 qemu:///session (用户权限)
+  # 远程连接: qemu+ssh://user@host/system
+  # 测试环境: qemu:///system
+  uri: "qemu:///system"
+  
+  # 连接超时时间（秒）
+  timeout: 30
+  
+  # 是否使用只读连接（安全模式）
+  readonly: false
+
+# MCP 服务器配置
+mcp:
+  # 服务器名称
+  server_name: "libvirt-manager"
+  
+  # 服务器版本
+  version: "1.0.0"
+  
+  # 服务器主机地址（HTTP/SSE 传输时使用）
+  host: "127.0.0.1"
+  
+  # 服务器端口（HTTP/SSE 传输时使用）
+  port: 8000
+  
+  # 传输类型：stdio（标准输入输出）、http（HTTP）、sse（服务器发送事件）
+  transport: "stdio"
+
+# 安全和访问控制配置
+security:
+  # 是否需要身份验证
+  auth_required: true
+  
+  # 允许的操作列表
+  allowed_operations:
+    # 域（虚拟机）操作
+    - "domain.list"          # 列出虚拟机
+    - "domain.info"          # 获取虚拟机信息
+    - "domain.start"         # 启动虚拟机
+    - "domain.stop"          # 停止虚拟机
+    - "domain.reboot"        # 重启虚拟机
+    - "domain.stats"         # 获取虚拟机统计信息
+    - "domain.getxml"        # 获取虚拟机XML配置
+    # 主机操作
+    - "host.info"            # 获取主机信息
+    # 网络操作
+    - "network.list"         # 列出虚拟网络
+    # 存储操作
+    - "storage.list"         # 列出存储池
+    
+    # 危险操作（谨慎启用）
+    # - "domain.create"      # 创建虚拟机
+    # - "domain.delete"      # 删除虚拟机
+    # - "domain.attach"      # 附加设备
+    # - "domain.detach"      # 分离设备
+  
+  # 是否启用审计日志
+  audit_log: true
+  
+  # 最大并发操作数
+  max_concurrent_ops: 10
+
+# 日志配置
+logging:
+  # 日志级别：DEBUG、INFO、WARNING、ERROR、CRITICAL
+  level: "INFO"
+  
+  # 日志文件路径（可选，不设置则输出到控制台）
+  file: null
+  
+  # 日志格式
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  
+  # 日志文件最大大小（字节）
+  max_size: 10485760  # 10MB
+  
+  # 备份日志文件数量
+  backup_count: 5

@@ -1,0 +1,48 @@
+[Unit]
+Description=Libvirt MCP Server - Virtualization management through Model Context Protocol
+Documentation=https://github.com/your-org/libvirt-mcp-server
+After=network.target libvirtd.service
+Wants=libvirtd.service
+
+[Service]
+Type=simple
+User=libvirt-mcp
+Group=libvirt-mcp
+WorkingDirectory=/opt/libvirt-mcp-server
+
+# Command to run
+ExecStart=/opt/libvirt-mcp-server/.venv/bin/libvirt-mcp-server --config /etc/libvirt-mcp-server/config.yaml
+
+# Restart policy
+Restart=always
+RestartSec=10
+StartLimitInterval=60s
+StartLimitBurst=3
+
+# Environment variables
+Environment=LIBVIRT_URI=qemu:///system
+Environment=MCP_LOG_LEVEL=INFO
+Environment=PATH=/opt/libvirt-mcp-server/.venv/bin:/usr/local/bin:/usr/bin:/bin
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/log/libvirt-mcp-server /var/run/libvirt-mcp-server
+CapabilityBoundingSet=
+AmbientCapabilities=
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+# Process settings
+LimitNOFILE=65536
+LimitNPROC=4096
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=libvirt-mcp-server
+
+[Install]
+WantedBy=multi-user.target

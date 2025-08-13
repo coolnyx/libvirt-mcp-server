@@ -1,0 +1,69 @@
+---
+description: 定义了使用 `uv` 依赖管理器管理本项目中 Python 依赖项的严格准则。
+globs:
+alwaysApply: false
+---
+
+
+# 使用 `uv` 进行包管理
+
+这些规则定义了使用 `uv` 依赖管理器管理本项目中 Python 依赖项的严格准则。
+
+**✅ 仅使用 `uv`**
+
+- 所有 Python 依赖项**必须使用 `uv` 安装、同步和锁定**。
+- 切勿直接使用 `pip`、`pip-tools` 或 `poetry` 进行依赖项管理。
+
+**🔁 管理依赖项**
+
+请始终使用以下命令：
+
+```bash
+# 添加或升级依赖项
+uv add <package>
+
+# 删除依赖项
+uv remove <package>
+
+# 从锁定文件重新安装所有依赖项
+uv sync
+```
+
+**🔁 脚本**
+
+```bash
+# 使用正确的依赖项运行脚本
+uv run script.py
+```
+
+您可以手动编辑内联元数据：
+
+```python
+# /// script
+# require-python = ">=3.12"
+# dependency = [
+# "torch",
+# "torchvision",
+# "opencv-python",
+# "numpy",
+# "matplotlib",
+# "Pillow",
+# "timm",
+# ]
+# ///
+
+print("some python code")
+```
+
+或者使用 uv cli：
+
+```bash
+# 添加或升级脚本依赖项
+uv add package-name --script script.py
+
+# 删除脚本依赖项
+uv remove package-name --script script.py
+
+# 从锁定文件重新安装所有脚本依赖项
+uv sync --script script.py
+```
