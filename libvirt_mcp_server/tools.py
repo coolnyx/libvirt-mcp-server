@@ -426,6 +426,7 @@ def register_tools(mcp_server: FastMCP, libvirt_client: LibvirtClient) -> None:
         vcpus: int = 2,
         disk_size: Optional[int] = None,
         disk_path: Optional[str] = None,
+        cdrom_path: Optional[str] = None,
         network: str = "default",
         os_type: str = "hvm",
         arch: str = "x86_64",
@@ -442,6 +443,7 @@ def register_tools(mcp_server: FastMCP, libvirt_client: LibvirtClient) -> None:
             vcpus: Number of virtual CPUs (default: 2)
             disk_size: Disk size in GB (optional)
             disk_path: Path to disk image (optional)
+            cdrom_path: Path to CDROM/ISO image (optional)
             network: Network name (default: "default")
             os_type: OS type (default: "hvm")
             arch: Architecture (default: "x86_64")
@@ -466,14 +468,19 @@ def register_tools(mcp_server: FastMCP, libvirt_client: LibvirtClient) -> None:
                     vcpus=vcpus,
                     disk_size=disk_size,
                     disk_path=disk_path,
+                    cdrom_path=cdrom_path,
                     network=network,
                     os_type=os_type,
                     arch=arch,
                     boot_device=boot_device
                 )
+                
+                # Validate file paths before generating XML
+                await libvirt_client._validate_file_paths(params)
+                
                 domain_xml = libvirt_client.generate_domain_xml(params)
             
-            success = await libvirt_client.create_domain(domain_xml, ephemeral)
+            success = await libvirt_client.create_domain(domain_xml, ephemeral, disk_size)
             
             result = OperationResult(
                 success=success,
@@ -482,7 +489,9 @@ def register_tools(mcp_server: FastMCP, libvirt_client: LibvirtClient) -> None:
                     "domain": name,
                     "ephemeral": ephemeral,
                     "memory": memory,
-                    "vcpus": vcpus
+                    "vcpus": vcpus,
+                    "disk_path": disk_path,
+                    "cdrom_path": cdrom_path
                 }
             )
             

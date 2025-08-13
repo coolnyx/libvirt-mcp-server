@@ -537,7 +537,7 @@ class LibvirtClient:
             logger.error(f"Failed to get domain XML for {domain_name}: {e}")
             raise LibvirtOperationError(f"Failed to get domain XML: {e}")
     
-    async def create_domain(self, xml: str, ephemeral: bool = False) -> bool:
+    async def create_domain(self, xml: str, ephemeral: bool = False, disk_size: Optional[int] = None) -> bool:
         """Create a new domain from XML configuration."""
         self._check_operation_allowed("domain.create")
         conn = self._ensure_connected()
@@ -545,9 +545,12 @@ class LibvirtClient:
         try:
             # Validate XML format
             try:
-                ET.fromstring(xml)
+                root = ET.fromstring(xml)
             except ET.ParseError as e:
                 raise LibvirtOperationError(f"Invalid XML format: {e}")
+            
+            # Ensure disk images exist before creating domain
+            await self._ensure_disk_images_exist(root, disk_size)
             
             if ephemeral:
                 # Create an ephemeral domain (not persistent)
@@ -709,3 +712,77 @@ class LibvirtClient:
         from .xml_templates import DomainXMLGenerator
         generator = DomainXMLGenerator()
         return generator.generate(params)
+    
+    async def _ensure_disk_images_exist(self, domain_xml: ET.Element, disk_size: Optional[int] = None) -> None:
+        """Ensure all disk images referenced in the domain XML exist."""
+        import os
+        import subprocess
+        from pathlib import Path
+        
+        for disk in domain_xml.findall('.//disk[@device="disk"]'):
+            source = disk.find('source')
+            if source is not None:
+                disk_path = source.get('file')
+                if disk_path:
+                    disk_file = Path(disk_path)
+                    
+                    # Create parent directory if it doesn't exist
+                    disk_file.parent.mkdir(parents=True, exist_ok=True)
+                    
+                    # Create the disk image if it doesn't exist
+                    if not disk_file.exists():
+                        logger.info(f"Creating disk image: {disk_path}")
+                        
+                        # Determine disk size
+                        if disk_size:
+                            size_str = f"{disk_size}G"
+                        else:
+                            size_str = "20G"  # Default size
+                        
+                        # Use qemu-img to create the disk image
+                        cmd = [
+                            "qemu-img", "create", "-f", "qcow2", 
+                            str(disk_path), size_str
+                        ]
+                        
+                        try:
+                            result = subprocess.run(
+                                cmd, 
+                                capture_output=True, 
+                                text=True, 
+                                check=True
+                            )
+                            logger.info(f"Created disk image: {disk_path} ({size_str})")
+                        except subprocess.CalledProcessError as e:
+                            logger.error(f"Failed to create disk image {disk_path}: {e}")
+                            raise LibvirtOperationError(f"Failed to create disk image: {e}")
+                        except FileNotFoundError:
+                            logger.error("qemu-img command not found. Please install qemu-utils.")
+                            raise LibvirtOperationError("qemu-img command not found. Please install qemu-utils.")
+    
+    async def _validate_file_paths(self, params: 'DomainCreateParams') -> None:
+        """Validate that required files exist and directories are accessible."""
+        import os
+        from pathlib import Path
+        
+        # Validate CDROM/ISO path if specified
+        if params.cdrom_path:
+            cdrom_file = Path(params.cdrom_path)
+            if not cdrom_file.exists():
+                raise LibvirtOperationError(f"CDROM/ISO file not found: {params.cdrom_path}")
+            if not cdrom_file.is_file():
+                raise LibvirtOperationError(f"CDROM path is not a file: {params.cdrom_path}")
+        
+        # Validate disk path directory if specified
+        if params.disk_path:
+            disk_file = Path(params.disk_path)
+            if not disk_file.parent.exists():
+                try:
+                    disk_file.parent.mkdir(parents=True, exist_ok=True)
+                    logger.info(f"Created disk directory: {disk_file.parent}")
+                except PermissionError:
+                    raise LibvirtOperationError(f"Cannot create disk directory: {disk_file.parent}")
+            
+            # Check if we can write to the directory
+            if not os.access(disk_file.parent, os.W_OK):
+                raise LibvirtOperationError(f"No write permission for disk directory: {disk_file.parent}")

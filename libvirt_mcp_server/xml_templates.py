@@ -26,6 +26,20 @@ class DomainXMLGenerator:
             "video_model": "qxl",
             "sound_model": "ich6",
         }
+        
+        # PCI Address allocation map for Q35 machine type
+        # Bus 0x00 (PCIe Root Complex):
+        #   Slot 0x01: Video device (function 0x0)
+        #   Slot 0x02: PCIe root port controller (function 0x0, multifunction)
+        #   Slot 0x03: IDE controller (function 0x0)
+        #   Slot 0x1b: Sound device (function 0x0) - ICH standard location
+        # Bus 0x01 (PCIe Root Port):
+        #   Slot 0x00: PCIe-to-PCI bridge (function 0x0)
+        #   Slot 0x01: USB controller (function 0x0)
+        # Bus 0x02 (PCIe-to-PCI Bridge):
+        #   Slot 0x01: Disk device (function 0x0)
+        #   Slot 0x02: Network interface (function 0x0)
+        # Bus 0x05: Memory balloon device (function 0x0)
     
     def generate(self, params: DomainCreateParams) -> str:
         """Generate domain XML from parameters."""
@@ -85,8 +99,13 @@ class DomainXMLGenerator:
         type_elem = ET.SubElement(os_elem, "type", arch=params.arch, machine=self.default_settings["machine_type"])
         type_elem.text = params.os_type
         
-        # Boot order
-        boot = ET.SubElement(os_elem, "boot", dev=params.boot_device)
+        # Boot order - prioritize CDROM if available
+        if params.cdrom_path and params.boot_device == "hd":
+            # Boot from CDROM first, then hard disk
+            boot_cdrom = ET.SubElement(os_elem, "boot", dev="cdrom")
+            boot_hd = ET.SubElement(os_elem, "boot", dev="hd")
+        else:
+            boot = ET.SubElement(os_elem, "boot", dev=params.boot_device)
         
         return os_elem
     
@@ -145,10 +164,32 @@ class DomainXMLGenerator:
         emulator = ET.SubElement(devices, "emulator")
         emulator.text = self.default_settings["emulator"]
         
-        # Disk
-        if params.disk_path or params.disk_size:
-            disk = self._generate_disk_device(params)
-            devices.append(disk)
+        # Disk - always create a disk device
+        disk = self._generate_disk_device(params)
+        devices.append(disk)
+        
+        # Controllers
+        # PCI Root controller
+        pci_root = self._generate_pci_root_controller()
+        devices.append(pci_root)
+        
+        # PCI bridge controllers
+        pci_bridges = self._generate_pci_bridges()
+        for bridge in pci_bridges:
+            devices.append(bridge)
+        
+        # USB controller for tablet and other USB devices
+        usb_controller = self._generate_usb_controller()
+        devices.append(usb_controller)
+        
+        # CDROM
+        if params.cdrom_path:
+            # Add SATA controller for CDROM (Q35 doesn't support IDE)
+            sata_controller = self._generate_ide_controller()
+            devices.append(sata_controller)
+            
+            cdrom = self._generate_cdrom_device(params)
+            devices.append(cdrom)
         
         # Network interface
         interface = self._generate_network_device(params)
@@ -203,10 +244,75 @@ class DomainXMLGenerator:
         # Target
         target = ET.SubElement(disk, "target", dev="vda", bus=self.default_settings["disk_bus"])
         
-        # Address
-        address = ET.SubElement(disk, "address", type="pci", domain="0x0000", bus="0x04", slot="0x00", function="0x0")
+        # Address - Use bus 0x01 (PCIe root port index 1), slot must be 0
+        address = ET.SubElement(disk, "address", type="pci", domain="0x0000", bus="0x01", slot="0x00", function="0x0")
         
         return disk
+    
+    def _generate_cdrom_device(self, params: DomainCreateParams) -> ET.Element:
+        """Generate CDROM device configuration."""
+        disk = ET.Element("disk", type="file", device="cdrom")
+        
+        # Driver
+        driver = ET.SubElement(disk, "driver", name="qemu", type="raw")
+        
+        # Source
+        source = ET.SubElement(disk, "source", file=params.cdrom_path)
+        
+        # Target
+        target = ET.SubElement(disk, "target", dev="sda", bus="sata")
+        
+        # Readonly
+        readonly = ET.SubElement(disk, "readonly")
+        
+        # Address - SATA address
+        address = ET.SubElement(disk, "address", type="drive", controller="0", bus="0", target="0", unit="0")
+        
+        return disk
+    
+    def _generate_usb_controller(self) -> ET.Element:
+        """Generate USB controller configuration."""
+        controller = ET.Element("controller", type="usb", index="0", model="qemu-xhci", ports="15")
+        
+        # Address - Use bus 0x03 (PCIe root port index 3)
+        address = ET.SubElement(controller, "address", type="pci", domain="0x0000", bus="0x03", slot="0x00", function="0x0")
+        
+        return controller
+    
+    def _generate_ide_controller(self) -> ET.Element:
+        """Generate IDE controller configuration."""
+        controller = ET.Element("controller", type="sata", index="0")
+        
+        # Address - Fixed: Q35 machine type requires SATA controller at 0:0:1f.2
+        address = ET.SubElement(controller, "address", type="pci", domain="0x0000", bus="0x00", slot="0x1f", function="0x2")
+        
+        return controller
+    
+    def _generate_pci_root_controller(self) -> ET.Element:
+        """Generate PCI root controller configuration."""
+        controller = ET.Element("controller", type="pci", index="0", model="pcie-root")
+        return controller
+    
+    def _generate_pci_bridges(self) -> list[ET.Element]:
+        """Generate PCI bridge controllers."""
+        bridges = []
+        
+        # PCIe root port for modern devices
+        root_port = ET.Element("controller", type="pci", index="1", model="pcie-root-port")
+        address = ET.SubElement(root_port, "address", type="pci", domain="0x0000", bus="0x00", slot="0x02", function="0x0", multifunction="on")
+        bridges.append(root_port)
+        
+        # PCIe root port for more devices  
+        root_port2 = ET.Element("controller", type="pci", index="2", model="pcie-root-port")
+        address = ET.SubElement(root_port2, "address", type="pci", domain="0x0000", bus="0x00", slot="0x04", function="0x0")
+        bridges.append(root_port2)
+        
+        # PCIe root port for USB controller
+        root_port3 = ET.Element("controller", type="pci", index="3", model="pcie-root-port")
+        address = ET.SubElement(root_port3, "address", type="pci", domain="0x0000", bus="0x00", slot="0x06", function="0x0")
+        bridges.append(root_port3)
+        
+        return bridges
     
     def _generate_network_device(self, params: DomainCreateParams) -> ET.Element:
         """Generate network interface device configuration."""
@@ -221,8 +327,8 @@ class DomainXMLGenerator:
         # Model
         model = ET.SubElement(interface, "model", type=self.default_settings["network_model"])
         
-        # Address
-        address = ET.SubElement(interface, "address", type="pci", domain="0x0000", bus="0x01", slot="0x00", function="0x0")
+        # Address - Use bus 0x02 (PCIe root port index 2), slot must be 0
+        address = ET.SubElement(interface, "address", type="pci", domain="0x0000", bus="0x02", slot="0x00", function="0x0")
         
         return interface
     
@@ -237,7 +343,17 @@ class DomainXMLGenerator:
     
     def _generate_input_device(self, device_type: str) -> ET.Element:
         """Generate input device configuration."""
-        input_dev = ET.Element("input", type=device_type, bus="ps2")
+        # Different input devices require different buses
+        if device_type == "tablet":
+            # Tablet devices should use USB bus
+            input_dev = ET.Element("input", type=device_type, bus="usb")
+        elif device_type in ["mouse", "keyboard"]:
+            # Mouse and keyboard can use PS2 bus
+            input_dev = ET.Element("input", type=device_type, bus="ps2")
+        else:
+            # Default to USB for other devices
+            input_dev = ET.Element("input", type=device_type, bus="usb")
+        
         return input_dev
     
     def _generate_graphics_device(self) -> ET.Element:
@@ -265,7 +381,7 @@ class DomainXMLGenerator:
         # Model
         model = ET.SubElement(video, "model", type=self.default_settings["video_model"], ram="65536", vram="65536", vgamem="16384", heads="1", primary="yes")
         
-        # Address
+        # Address - Clear PCI address for video device
         address = ET.SubElement(video, "address", type="pci", domain="0x0000", bus="0x00", slot="0x01", function="0x0")
         
         return video

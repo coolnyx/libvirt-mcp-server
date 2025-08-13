@@ -96,9 +96,13 @@ class LibvirtMCPServer:
             
             logger.info("Libvirt MCP server stopped")
     
-    def create_server(self) -> FastMCP:
+    def create_server(self, host: str = None, port: int = None) -> FastMCP:
         """
         Create and configure the FastMCP server.
+        
+        Args:
+            host: Server host (overrides config)
+            port: Server port (overrides config)
         
         Returns:
             Configured FastMCP server instance
@@ -133,10 +137,16 @@ class LibvirtMCPServer:
         feel free to ask for explanations or guidance.
         """
         
+        # Use provided host/port or defaults from config
+        server_host = host or self.config.mcp.host
+        server_port = port or self.config.mcp.port
+        
         # Create FastMCP server with instructions and lifespan management
         mcp_server = FastMCP(
             name=self.config.mcp.server_name,
             instructions=instructions,
+            host=server_host,
+            port=server_port,
             lifespan=self._lifespan,
         )
         
@@ -174,8 +184,8 @@ class LibvirtMCPServer:
         )
         
         try:
-            server = self.create_server()
-            await server.run(transport="streamable-http", host=server_host, port=server_port)
+            server = self.create_server(host=server_host, port=server_port)
+            await server.run_streamable_http_async()
         except KeyboardInterrupt:
             logger.info("Server interrupted by user")
         except Exception as e:
@@ -200,8 +210,8 @@ class LibvirtMCPServer:
         )
         
         try:
-            server = self.create_server()
-            await server.run(transport="sse", host=server_host, port=server_port)
+            server = self.create_server(host=server_host, port=server_port)
+            await server.run_sse_async()
         except KeyboardInterrupt:
             logger.info("Server interrupted by user")
         except Exception as e:

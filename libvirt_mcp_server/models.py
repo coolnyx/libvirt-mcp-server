@@ -127,13 +127,14 @@ class DomainCreateParams(BaseModel):
     name: str = Field(description="Domain name")
     memory: int = Field(description="Memory size in KB", ge=1024)
     vcpus: int = Field(description="Number of virtual CPUs", ge=1, le=128)
-    disk_size: Optional[int] = Field(description="Disk size in GB", ge=1)
-    disk_path: Optional[str] = Field(description="Path to disk image")
+    disk_size: Optional[int] = Field(description="Disk size in GB", ge=1, default=None)
+    disk_path: Optional[str] = Field(description="Path to disk image", default=None)
+    cdrom_path: Optional[str] = Field(description="Path to CDROM/ISO image", default=None)
     network: Optional[str] = Field(description="Network name", default="default")
     os_type: str = Field(description="OS type", default="hvm")
     arch: str = Field(description="Architecture", default="x86_64")
     boot_device: str = Field(description="Boot device", default="hd")
-    xml: Optional[str] = Field(description="Custom XML configuration")
+    xml: Optional[str] = Field(description="Custom XML configuration", default=None)
 
 
 class OperationResult(BaseModel):
